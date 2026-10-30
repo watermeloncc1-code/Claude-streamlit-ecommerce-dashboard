@@ -95,17 +95,11 @@ data_analysis/
    streamlit run dashboard.py
    ```
 
-2. **Navigate the interface**:
-   - Use the **year filter** in the top-right to select analysis period
-   - View **KPI cards** showing key metrics with trend indicators
-   - Explore **interactive charts** in the 2x2 grid layout
-   - Monitor **customer experience metrics** in the bottom row
+2. **Choose a date range** with the month-range slider in the top-right of the header. It defaults to Jan 2023 - Dec 2023 and applies to every card and chart on the page. Trends compare the selected months with the same months one year earlier; if those months have no data, cards show "No comparison data" and the dashed previous-period line is omitted.
 
-3. **Dashboard Features**:
-   - **Real-time filtering**: All charts update automatically when year is changed
-   - **Professional styling**: Clean, business-ready interface
-   - **Trend indicators**: Green/red arrows showing performance changes
-   - **Formatted values**: Currency displayed as $300K, $2M for readability
+3. **Read the page** from top to bottom: KPI cards, the 2x2 chart grid, then the customer experience cards (see [Dashboard Features](#dashboard-features)).
+
+4. **Configuration**: the constants at the top of `dashboard.py` set the data path, order status, delivery-time buckets and default date range. They match the notebook defaults.
 
 ### Notebook Analysis
 
@@ -334,25 +328,28 @@ def plot_custom_metric(data, period_label):
 ## Dashboard Features
 
 ### Layout Structure
-- **Header**: Title with year selection filter (applies globally)
-- **KPI Row**: 4 metric cards with trend indicators
-  - Total Revenue, Monthly Growth, Average Order Value, Total Orders
-  - Color-coded trends (green for positive, red for negative)
-- **Charts Grid**: 2x2 interactive visualization layout
-  - Revenue trend (current vs previous year)
-  - Top 10 product categories bar chart
-  - US state choropleth map
-  - Customer satisfaction vs delivery time analysis
-- **Bottom Row**: Customer experience metrics
-  - Average delivery time with trend
-  - Review score with star rating
+- **Header**: Title on the left; month-range slider on the right (applies globally), with the comparison period shown underneath
+- **KPI Row**: 4 cards of equal height
+  - Total Revenue, Average Order Value and Total Orders, each with a trend indicator against the comparison period
+  - Monthly Growth: the average month-over-month revenue change in the selected range (needs at least 2 months)
+- **Charts Grid**: 2x2 layout, all Plotly
+  - Monthly revenue trend: solid line for the selected period, dashed line for the same months a year earlier, grid lines, y-axis in $300K format
+  - Top 10 product categories by revenue, sorted descending, blue gradient (lighter for lower values), values as $300K / $2M
+  - Revenue by state: US choropleth on a blue gradient
+  - Average review score by delivery-time bucket (1-3 days, 4-7 days, 8+ days)
+- **Bottom Row**: 2 cards of equal height
+  - Average delivery time with trend indicator
+  - Average review score as a large number with partially filled stars
 
-### Technical Features
-- **Real-time Filtering**: All visualizations update automatically
-- **Professional Styling**: Business-ready interface with uniform card heights
-- **Plotly Charts**: Interactive, publication-quality visualizations
-- **Responsive Design**: Adapts to different screen sizes
-- **Error Handling**: Graceful handling of missing data
+### Trend Indicators
+- An up or down arrow shows the direction of the change, followed by the change with two decimals, e.g. "▼ 2.46% vs Jan 2022 - Dec 2022"
+- Green means a favourable change and red an unfavourable one. For revenue, order value and orders, an increase is green. For delivery time, a decrease (faster delivery) is green
+
+### Technical Notes
+- All data preparation comes from `data_loader.py` and all metrics from `business_metrics.py`, so the dashboard shows the same numbers as the notebook for the same period
+- Delivery time and review score are averaged per order, not per item
+- Data is loaded once per server process and each date range is cached
+- Partial months at the edges of the data (Dec 2021 and Jan 2024 contain only one day each) can produce extreme month-over-month growth values when included in the range
 
 ## Future Enhancements
 
