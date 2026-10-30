@@ -85,6 +85,17 @@ st.markdown(f"""
     .stars-fill {{ position: absolute; top: 0; left: 0; overflow: hidden;
                    white-space: nowrap; color: {STAR_FILLED}; }}
 
+    .action-banner {{
+        background: #fff8e6;
+        border: 1px solid #f0d58a;
+        border-left: 5px solid {STAR_FILLED};
+        border-radius: 10px;
+        padding: 0.9rem 1.25rem;
+        margin: 0.5rem 0 1rem 0;
+    }}
+    .action-headline {{ font-size: 1.2rem; font-weight: 700; color: #0b0b0b; }}
+    .action-detail {{ font-size: 0.95rem; color: #3d3c39; margin-top: 0.25rem; }}
+
     .dashboard-subtitle {{ color: #52514e; margin-top: -0.5rem; }}
 </style>
 """, unsafe_allow_html=True)
@@ -228,6 +239,35 @@ def card(label: str, value: str, trend: str, css_class: str = 'kpi-card',
         <div class="card-trend">{trend}</div>
     </div>
     """
+
+
+def priority_action(report: Dict[str, object],
+                    score_by_bucket: pd.DataFrame) -> Optional[Tuple[str, str]]:
+    """
+    The one action to act on: speed up the slowest deliveries.
+
+    Compares the average review score of the slowest delivery bucket with the
+    fastest one, and how many orders fall in the slowest bucket. Returns a
+    (headline, detail) pair, or None when either bucket has no reviewed orders.
+    """
+    fast_label, slow_label = DELIVERY_BIN_LABELS[0], DELIVERY_BIN_LABELS[-1]
+    scores = score_by_bucket.assign(
+        bucket=score_by_bucket['delivery_speed_category'].astype(str)
+    ).set_index('bucket')['avg_review_score']
+    if fast_label not in scores.index or slow_label not in scores.index:
+        return None
+
+    gap = scores[fast_label] - scores[slow_label]
+    slow_share = report['delivery_performance'].get(
+        'category_distribution', pd.Series(dtype=float)).get(slow_label, np.nan)
+    if pd.isna(gap) or pd.isna(slow_share) or gap <= 0:
+        return None
+
+    headline = f"Priority: speed up the {slow_share:.0f}% of orders that take {slow_label}"
+    detail = (f"Customers who wait {slow_label} give an average of {scores[slow_label]:.2f} stars, "
+              f"compared with {scores[fast_label]:.2f} for {fast_label} "
+              f"({gap:.2f} lower). Start with the carriers or regions behind the slowest orders.")
+    return headline, detail
 
 
 def _base_layout(fig: go.Figure, title: str) -> go.Figure:
@@ -403,6 +443,16 @@ def main() -> None:
     if report is None:
         st.warning(f"No {ORDER_STATUS} orders in {period_label}. Choose a different date range.")
         st.stop()
+
+    # The one thing to act on, before the numbers
+    action = priority_action(report, data['score_by_bucket'])
+    if action:
+        st.markdown(f"""
+        <div class="action-banner">
+            <div class="action-headline">{action[0]}</div>
+            <div class="action-detail">{action[1]}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # KPI row
     revenue = report['revenue_metrics']
