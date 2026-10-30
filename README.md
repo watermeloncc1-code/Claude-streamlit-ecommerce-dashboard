@@ -95,7 +95,7 @@ data_analysis/
    streamlit run dashboard.py
    ```
 
-2. **Choose a date range** with the month-range slider in the top-right of the header. It defaults to Jan 2023 - Dec 2023 and applies to every card and chart on the page. Trends compare the selected months with the same months one year earlier; if those months have no data, cards show "No comparison data" and the dashed previous-period line is omitted.
+2. **Choose a date range** with the three filters in the top-right of the header: **Year** (defaults to 2023), **From month** and **To month** (default Jan to Dec; "To month" only offers months on or after "From month"). The filters apply to every card and chart on the page. Trends compare the selected months with the same months one year earlier. If those months have no data, or have data for fewer months than the selected range (for example 2021, which only contains Dec 31), cards show "No comparison data", the caption under the filters explains why, and the dashed previous-period line is omitted.
 
 3. **Read the page** from top to bottom: KPI cards, the 2x2 chart grid, then the customer experience cards (see [Dashboard Features](#dashboard-features)).
 
@@ -328,7 +328,7 @@ def plot_custom_metric(data, period_label):
 ## Dashboard Features
 
 ### Layout Structure
-- **Header**: Title on the left; month-range slider on the right (applies globally), with the comparison period shown underneath
+- **Header**: Title on the left; Year, From month and To month filters on the right (apply globally, default Jan - Dec 2023), with the comparison period shown underneath
 - **KPI Row**: 4 cards of equal height
   - Total Revenue, Average Order Value and Total Orders, each with a trend indicator against the comparison period
   - Monthly Growth: the average month-over-month revenue change in the selected range (needs at least 2 months)
@@ -349,7 +349,7 @@ def plot_custom_metric(data, period_label):
 - All data preparation comes from `data_loader.py` and all metrics from `business_metrics.py`, so the dashboard shows the same numbers as the notebook for the same period
 - Delivery time and review score are averaged per order, not per item
 - Data is loaded once per server process and each date range is cached
-- Partial months at the edges of the data (Dec 2021 and Jan 2024 contain only one day each) can produce extreme month-over-month growth values when included in the range
+- 2021 and 2024 each contain a single day of data (Dec 31, 2021 and Jan 1, 2024). Selecting them gives very small totals, and Jan 2024 compared with Jan 2023 shows a correspondingly large drop
 
 ## Future Enhancements
 

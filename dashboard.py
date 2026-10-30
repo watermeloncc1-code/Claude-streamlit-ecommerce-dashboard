@@ -39,8 +39,9 @@ ORDER_STATUS = 'delivered'
 DELIVERY_BIN_EDGES = [0, 3, 7, np.inf]
 DELIVERY_BIN_LABELS = ['1-3 days', '4-7 days', '8+ days']
 
-DEFAULT_START = (2023, 1)
-DEFAULT_END = (2023, 12)
+DEFAULT_YEAR = 2023
+DEFAULT_START_MONTH = 1
+DEFAULT_END_MONTH = 12
 
 TREND_POSITIVE = '#1a7f37'
 TREND_NEGATIVE = '#cf222e'
@@ -56,7 +57,7 @@ st.set_page_config(page_title='E-commerce Sales Dashboard', layout='wide',
 st.markdown(f"""
 <style>
     #MainMenu, footer {{ visibility: hidden; }}
-    .block-container {{ padding-top: 1.5rem; padding-bottom: 2rem; }}
+    .block-container {{ padding-top: 3.5rem; padding-bottom: 2rem; }}
 
     .card {{
         background: #ffffff;
@@ -72,9 +73,9 @@ st.markdown(f"""
     .kpi-card {{ height: 132px; }}
     .bottom-card {{ height: 170px; align-items: center; text-align: center; }}
 
-    .card-label {{ font-size: 0.85rem; color: #52514e; margin: 0 0 0.35rem 0; }}
+    .card-label {{ font-size: 0.9rem; color: #52514e; margin: 0 0 0.35rem 0; }}
     .card-value {{ font-size: 1.9rem; font-weight: 700; color: #0b0b0b; margin: 0; line-height: 1.2; }}
-    .card-value-large {{ font-size: 2.6rem; }}
+    .card .card-value-large {{ font-size: 2.6rem; }}
     .card-trend {{ font-size: 0.85rem; margin: 0.4rem 0 0 0; color: {TREND_NEUTRAL}; }}
     .trend-positive {{ color: {TREND_POSITIVE}; font-weight: 600; }}
     .trend-negative {{ color: {TREND_NEGATIVE}; font-weight: 600; }}
@@ -100,12 +101,10 @@ def get_loader():
     return loader
 
 
-def available_months(loader) -> List[Tuple[int, int]]:
-    """All (year, month) pairs that contain at least one order, in order."""
-    orders = loader.processed_data['orders']
-    pairs = orders[['purchase_year', 'purchase_month']].drop_duplicates().sort_values(
-        ['purchase_year', 'purchase_month'])
-    return [(int(y), int(m)) for y, m in pairs.itertuples(index=False)]
+def available_years(loader) -> List[int]:
+    """Years that contain at least one order, most recent first."""
+    years = loader.processed_data['orders']['purchase_year'].unique()
+    return sorted((int(y) for y in years), reverse=True)
 
 
 def month_label(year: int, month: int) -> str:
@@ -130,12 +129,23 @@ def build_period_data(start: Tuple[int, int], end: Tuple[int, int]) -> Dict[str,
     current = loader.create_sales_dataset(*period, status_filter=ORDER_STATUS)
     current = add_delivery_speed_category(current, DELIVERY_BIN_EDGES, DELIVERY_BIN_LABELS)
     comparison = loader.create_sales_dataset(*comparison_period, status_filter=ORDER_STATUS)
+
+    # Only compare when the earlier period has data in as many months as the
+    # current one; otherwise trends would compare unequal amounts of time.
+    def months_with_data(sales):
+        return sales[['purchase_year', 'purchase_month']].drop_duplicates().shape[0]
+
+    comparison_status = 'ok'
     if comparison.empty:
-        comparison = None
+        comparison, comparison_status = None, 'missing'
+    elif months_with_data(comparison) < months_with_data(current):
+        comparison, comparison_status = None, 'incomplete'
 
     result = {
         'period': period,
         'comparison_period': comparison_period if comparison is not None else None,
+        'comparison_status': comparison_status,
+        'requested_comparison_period': comparison_period,
         'current_sales': current,
         'report': None,
         'score_by_bucket': None,
@@ -213,9 +223,9 @@ def card(label: str, value: str, trend: str, css_class: str = 'kpi-card',
     """HTML for a metric card."""
     return f"""
     <div class="card {css_class}">
-        <p class="card-label">{label}</p>
-        <p class="card-value {value_class}">{value}</p>
-        <p class="card-trend">{trend}</p>
+        <div class="card-label">{label}</div>
+        <div class="card-value {value_class}">{value}</div>
+        <div class="card-trend">{trend}</div>
     </div>
     """
 
@@ -273,8 +283,13 @@ def revenue_trend_chart(report: Dict[str, object], period_label: str,
     tickvals, ticktext = compact_currency_ticks(max_revenue)
     _base_layout(fig, f"Monthly Revenue, {period_label}")
     fig.update_layout(hovermode='x unified',
-                      legend=dict(orientation='h', yanchor='bottom', y=1.0, xanchor='right', x=1))
-    fig.update_xaxes(title='Purchase month', categoryorder='array', categoryarray=labels)
+                      legend=dict(orientation='h', yanchor='top', y=-0.25, xanchor='left', x=0),
+                      margin=dict(b=40))
+    # Ticks show the month only (the year is in the title); hover keeps the full label.
+    # Month labels are self-explanatory; the legend sits where an axis title would.
+    fig.update_xaxes(title=None, categoryorder='array', categoryarray=labels,
+                     tickvals=labels, ticktext=[calendar.month_abbr[m] for m in monthly['month']],
+                     tickangle=0)
     fig.update_yaxes(title='Revenue (USD)', tickvals=tickvals, ticktext=ticktext,
                      range=[0, tickvals[-1]])
     return fig
@@ -346,19 +361,26 @@ def satisfaction_chart(score_by_bucket: pd.DataFrame, period_label: str) -> go.F
 
 def main() -> None:
     loader = get_loader()
-    months = available_months(loader)
-    labels = [month_label(y, m) for y, m in months]
-    label_to_month = dict(zip(labels, months))
+    years = available_years(loader)
+    month_names = list(calendar.month_abbr)[1:]
 
-    default_start = month_label(*DEFAULT_START) if DEFAULT_START in months else labels[0]
-    default_end = month_label(*DEFAULT_END) if DEFAULT_END in months else labels[-1]
-
-    # Header: title left, date range filter right
+    # Header: title left, date range filters (year, from month, to month) right
     title_col, filter_col = st.columns([3, 2], vertical_alignment='bottom')
     with filter_col:
-        start_label, end_label = st.select_slider(
-            'Date range', options=labels, value=(default_start, default_end), key='date_range')
-    start, end = label_to_month[start_label], label_to_month[end_label]
+        year_col, from_col, to_col = st.columns(3)
+        year = year_col.selectbox(
+            'Year', years,
+            index=years.index(DEFAULT_YEAR) if DEFAULT_YEAR in years else 0, key='year')
+        start_month = from_col.selectbox(
+            'From month', range(1, 13), index=DEFAULT_START_MONTH - 1,
+            format_func=lambda m: month_names[m - 1], key='start_month')
+        # Only months on or after the start month, so the range is always valid
+        end_options = list(range(start_month, 13))
+        end_default = max(DEFAULT_END_MONTH, start_month)
+        end_month = to_col.selectbox(
+            'To month', end_options, index=end_options.index(end_default),
+            format_func=lambda m: month_names[m - 1], key='end_month')
+    start, end = (year, start_month), (year, end_month)
 
     data = build_period_data(start, end)
     period_label = describe_period(*data['period'])
@@ -368,9 +390,14 @@ def main() -> None:
         st.title('E-commerce Sales Dashboard')
         st.markdown(f'<p class="dashboard-subtitle">Delivered orders, {period_label}</p>',
                     unsafe_allow_html=True)
+    requested_label = describe_period(*data['requested_comparison_period'])
     with filter_col:
-        st.caption(f"Compared with {comparison_label}" if comparison_label
-                   else 'No data for the same months one year earlier')
+        if data['comparison_status'] == 'ok':
+            st.caption(f"Compared with {comparison_label}")
+        elif data['comparison_status'] == 'incomplete':
+            st.caption(f"No comparison: {requested_label} has data for fewer months")
+        else:
+            st.caption(f"No comparison: no data for {requested_label}")
 
     report = data['report']
     if report is None:
@@ -422,10 +449,10 @@ def main() -> None:
     ), unsafe_allow_html=True)
     review_col.markdown(f"""
     <div class="card bottom-card">
-        <p class="card-value card-value-large">{'n/a' if pd.isna(review_score) else f'{review_score:.2f}'}</p>
+        <div class="card-value card-value-large">{'n/a' if pd.isna(review_score) else f'{review_score:.2f}'}</div>
         <div class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;<div class="stars-fill"
              style="width: {fill_pct:.1f}%">&#9733;&#9733;&#9733;&#9733;&#9733;</div></div>
-        <p class="card-trend">Average Review Score</p>
+        <div class="card-trend">Average Review Score</div>
     </div>
     """, unsafe_allow_html=True)
 
