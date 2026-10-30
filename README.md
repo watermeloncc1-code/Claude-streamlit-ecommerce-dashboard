@@ -329,6 +329,7 @@ def plot_custom_metric(data, period_label):
 
 ### Layout Structure
 - **Header**: Title on the left; Year, From month and To month filters on the right (apply globally, default Jan - Dec 2023), with the comparison period shown underneath
+- **Priority Banner**: one plain-language action above the KPIs. It compares the review score of the slowest delivery bucket (8+ days) with the fastest (1-3 days) and states how many orders are slow. It is hidden when the data can't support it (missing bucket, or slow orders not scoring lower)
 - **KPI Row**: 4 cards of equal height
   - Total Revenue, Average Order Value and Total Orders, each with a trend indicator against the comparison period
   - Monthly Growth: the average month-over-month revenue change in the selected range (needs at least 2 months)
