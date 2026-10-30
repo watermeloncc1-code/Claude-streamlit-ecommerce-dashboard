@@ -6,10 +6,10 @@ A comprehensive business intelligence solution featuring both Jupyter notebook a
 
 This project transforms a basic exploratory data analysis into a professional, maintainable business intelligence framework. The refactored solution provides:
 
-- **Configurable Analysis**: Easily analyze any time period or compare different years
-- **Modular Architecture**: Reusable data loading and metrics calculation modules
-- **Professional Visualizations**: Business-oriented charts with proper formatting
-- **Strategic Insights**: Automated generation of business recommendations
+- **Configurable Analysis**: Analyze any inclusive month range (including ranges that cross years) against any comparison period
+- **Modular Architecture**: Separate modules for data loading, metric calculation and charts
+- **Consistent Visualizations**: Titled charts with labelled axes, units, date ranges and one shared palette
+- **Neutral Summary**: Observations generated from the calculated values, with no assumed business thresholds
 
 ## Project Structure
 
@@ -17,8 +17,10 @@ This project transforms a basic exploratory data analysis into a professional, m
 data_analysis/
 ├── EDA_Refactored.ipynb     # Main analysis notebook
 ├── dashboard.py             # Streamlit dashboard application
-├── data_loader.py           # Data loading and processing module
-├── business_metrics.py      # Business metrics calculation module
+├── EDA.ipynb                # Original exploratory analysis (kept for reference)
+├── data_loader.py           # Data loading, cleaning, joining and period filtering
+├── business_metrics.py      # Business metric calculations only (no plotting)
+├── visualizations.py        # Charts and text formatting helpers
 ├── requirements.txt         # Python dependencies
 ├── README.md               # This file
 └── ecommerce_data/         # Data directory
@@ -33,28 +35,25 @@ data_analysis/
 ## Features
 
 ### 1. Configurable Analysis Framework
-- Set analysis year, comparison year, and month filters
-- Flexible time period analysis without code changes
-- Automatic handling of missing data periods
+- Set the analysis period as a start and end month (inclusive), e.g. Jan-Dec 2023, Q4 2023 or Jul 2022 - Jun 2023
+- Comparison period defaults to the same months one year earlier, or can be set explicitly or turned off
+- Order status and delivery-time buckets are configuration values, not hardcoded
+- A data coverage check shows how many months of data each period actually contains
 
 ### 2. Comprehensive Business Metrics
 - **Revenue Analysis**: Total revenue, growth rates, average order value
 - **Product Performance**: Category analysis, revenue share, top performers
 - **Geographic Insights**: State-level revenue and order analysis
-- **Customer Satisfaction**: Review scores, satisfaction distribution
-- **Delivery Performance**: Delivery times, speed categorization
+- **Customer Satisfaction**: Average review score and share of orders at each score (1-5)
+- **Delivery Performance**: Average and median delivery time, review score by delivery time
+- **Order Status**: Share of orders in each status
 
-### 3. Professional Visualizations
-- Monthly revenue trend charts
-- Product category performance bars
-- Interactive geographic heatmaps
-- Customer satisfaction distributions
-- Consistent color schemes and formatting
-
-### 4. Automated Insights
-- Strategic recommendations based on data patterns
-- Performance benchmarking and alerts
-- Executive summary generation
+### 3. Visualizations
+- Monthly revenue line chart, with the comparison period overlaid
+- Revenue by product category (horizontal bar)
+- Interactive US state choropleth of revenue
+- Review score distribution and review score by delivery time
+- Every chart title includes the date range; axes carry units; one blue primary color, grey for the comparison period, and a single-hue blue scale for the map
 
 ## Installation and Setup
 
@@ -112,141 +111,193 @@ data_analysis/
 
 1. **Open the refactored notebook**: `EDA_Refactored.ipynb`
 
-2. **Configure analysis parameters** in the first code cell:
+2. **Configure analysis parameters** in the configuration cell (Section 2.1):
    ```python
-   ANALYSIS_YEAR = 2023        # Year to analyze
-   COMPARISON_YEAR = 2022      # Comparison year (optional)
-   ANALYSIS_MONTH = None       # Specific month or None for full year
-   DATA_PATH = 'ecommerce_data/'
+   DATA_PATH = 'ecommerce_data'
+
+   # Analysis period (inclusive month range)
+   START_YEAR, START_MONTH = 2023, 1
+   END_YEAR, END_MONTH = 2023, 12
+
+   # Comparison period: same months one year earlier, or set explicit bounds
+   COMPARE_TO_PREVIOUS_YEAR = True
+   COMPARISON_START_YEAR, COMPARISON_START_MONTH = None, None
+   COMPARISON_END_YEAR, COMPARISON_END_MONTH = None, None
+
+   # Order status included in sales metrics
+   ORDER_STATUS = 'delivered'
+
+   # Delivery-time buckets (right-inclusive edges in days, one label per bucket)
+   DELIVERY_BIN_EDGES = [0, 3, 7, np.inf]
+   DELIVERY_BIN_LABELS = ['1-3 days', '4-7 days', '8+ days']
    ```
 
-3. **Run all cells** to generate the complete analysis
+3. **Run all cells** (Kernel > Restart & Run All) to generate the complete analysis. To run it headlessly:
+   ```bash
+   jupyter nbconvert --to notebook --execute --inplace EDA_Refactored.ipynb
+   ```
+
+4. **Notebook sections**: Introduction & Business Objectives, Data Loading & Configuration, Data Dictionary, Data Preparation & Transformation, Business Metrics (revenue, product, geographic, customer experience), and Summary of Observations.
 
 ### Advanced Configuration
 
 #### Analyzing Specific Time Periods
 ```python
-# Analyze only Q4 2023
-for month in [10, 11, 12]:
-    ANALYSIS_MONTH = month
-    # Run analysis
+# Q4 2023 compared with Q4 2022
+START_YEAR, START_MONTH = 2023, 10
+END_YEAR, END_MONTH = 2023, 12
+
+# A single month
+START_YEAR, START_MONTH = 2023, 3
+END_YEAR, END_MONTH = 2023, 3
+
+# A range crossing a year boundary, compared with an explicit period
+START_YEAR, START_MONTH = 2023, 7
+END_YEAR, END_MONTH = 2024, 6
+COMPARE_TO_PREVIOUS_YEAR = False
+COMPARISON_START_YEAR, COMPARISON_START_MONTH = 2022, 7
+COMPARISON_END_YEAR, COMPARISON_END_MONTH = 2023, 6
 ```
+
+Check the data coverage output in Section 4: if a period contains fewer months of data than requested, its comparison figures cover different amounts of time.
 
 #### Custom Data Paths
 ```python
 # Use different data location
-DATA_PATH = '/path/to/your/data/'
+DATA_PATH = '/path/to/your/data'
 ```
 
 #### Filtering by Order Status
 ```python
-# Modify in data_loader.py create_sales_dataset method
-status_filter = 'delivered'  # or 'shipped', 'processing', etc.
+# In the notebook configuration cell: a single status, a list, or None for all
+ORDER_STATUS = 'delivered'
+ORDER_STATUS = ['delivered', 'shipped']
 ```
 
 ### Module Usage
 
-#### Data Loading Module
+#### Data Loading Module (`data_loader.py`)
 ```python
-from data_loader import EcommerceDataLoader, load_and_process_data
+import numpy as np
+from data_loader import (load_and_process_data, describe_period,
+                         get_comparison_period, add_delivery_speed_category)
 
-# Quick start
-loader, processed_data = load_and_process_data('ecommerce_data/')
+loader, processed_data = load_and_process_data('ecommerce_data')
 
-# Advanced usage
-loader = EcommerceDataLoader('ecommerce_data/')
-loader.load_raw_data()
-processed_data = loader.process_all_data()
+# Item-level sales for an inclusive month range
+period = (2023, 1, 2023, 12)
+current = loader.create_sales_dataset(*period, status_filter='delivered')
+previous = loader.create_sales_dataset(*get_comparison_period(*period))
 
-# Create filtered dataset
-sales_data = loader.create_sales_dataset(
-    year_filter=2023,
-    month_filter=None,
-    status_filter='delivered'
-)
+# Single-year shortcut (still supported, used by dashboard.py)
+current_2023 = loader.create_sales_dataset(year_filter=2023)
+
+# Optional delivery-time buckets; the boundaries are always passed in
+current = add_delivery_speed_category(current, [0, 3, 7, np.inf],
+                                      ['1-3 days', '4-7 days', '8+ days'])
+
+# All orders in the period regardless of status
+orders = loader.filter_orders_by_period(*period)
+
+describe_period(*period)  # 'Jan 2023 - Dec 2023'
 ```
 
-#### Business Metrics Module
+#### Business Metrics Module (`business_metrics.py`)
 ```python
-from business_metrics import BusinessMetricsCalculator, MetricsVisualizer
+from business_metrics import BusinessMetricsCalculator, calculate_order_status_distribution
 
-# Calculate metrics
-metrics_calc = BusinessMetricsCalculator(sales_data)
-report = metrics_calc.generate_comprehensive_report(
-    current_year=2023,
-    previous_year=2022
-)
+calc = BusinessMetricsCalculator(current, comparison_data=previous)
+report = calc.generate_comprehensive_report()
 
-# Create visualizations
-visualizer = MetricsVisualizer(report)
-revenue_fig = visualizer.plot_revenue_trend()
-category_fig = visualizer.plot_category_performance()
+report['revenue_metrics']        # revenue, orders, AOV, period-over-period changes
+report['monthly_trends']         # per-month revenue, orders, AOV and MoM change
+report['average_mom_growth']     # mean of monthly revenue growth rates
+calc.analyze_product_performance(top_n=5)
+calc.review_score_by_delivery('delivery_speed_category')
+calculate_order_status_distribution(orders)
+```
+
+The calculator never filters by date itself: pass it data that is already filtered to the period you want.
+
+#### Visualization Module (`visualizations.py`)
+```python
+import visualizations as viz
+
+label = describe_period(*period)
+viz.plot_monthly_revenue(report['monthly_trends'], label,
+                         report['comparison_monthly_trends'], 'Jan 2022 - Dec 2022')
+viz.plot_category_revenue(report['product_performance'], label)
+viz.plot_revenue_by_state(report['geographic_performance'], label).show()
+viz.print_metrics_summary(report, label)
 ```
 
 ## Key Business Metrics
 
 ### Revenue Metrics
-- **Total Revenue**: Sum of all delivered order item prices
-- **Revenue Growth Rate**: Year-over-year percentage change
-- **Average Order Value (AOV)**: Average total value per order
-- **Monthly Growth Trends**: Month-over-month performance
+- **Total Revenue**: Sum of item prices for orders with the configured status (freight excluded)
+- **Revenue Growth Rate**: Percent change from the comparison period; reported as n/a when the comparison value is zero
+- **Average Order Value (AOV)**: Mean revenue per order
+- **Monthly Growth Trends**: Month-over-month percent change in revenue, and its average over the period
 
 ### Product Performance
 - **Category Revenue**: Revenue by product category
-- **Market Share**: Percentage of total revenue by category
-- **Category Diversity**: Distribution across product lines
+- **Revenue Share**: Percentage of total revenue by category
+- **Items and Orders**: Items sold and distinct orders per category
 
 ### Geographic Analysis
 - **State Performance**: Revenue and order count by state
-- **Market Penetration**: Number of active markets
-- **Regional AOV**: Average order value by geographic region
+- **Revenue Share**: Percentage of total revenue by state
+- **Regional AOV**: Average order value by state
 
 ### Customer Experience
-- **Review Scores**: Average satisfaction rating (1-5 scale)
-- **Satisfaction Distribution**: Percentage of high/low ratings
-- **Delivery Performance**: Average delivery time and speed metrics
+- **Review Scores**: Average rating (1-5 scale) over reviewed orders
+- **Score Distribution**: Percentage of reviewed orders at each score
+- **Delivery Performance**: Average and median days from purchase to delivery
+- **Review Score by Delivery Time**: Average score per delivery day and per configured bucket
+- **Order Status Distribution**: Percentage of all orders in each status
 
 ## Output Examples
 
 ### Console Output
 ```
-BUSINESS METRICS SUMMARY - 2023
 ============================================================
-
-REVENUE PERFORMANCE:
-  Total Revenue: $3,360,294.74
-  Total Orders: 4,635
-  Average Order Value: $724.98
-  Revenue Growth: -2.5%
-
-CUSTOMER SATISFACTION:
-  Average Review Score: 4.10/5.0
-  High Satisfaction (4+): 84.2%
-
-DELIVERY PERFORMANCE:
-  Average Delivery Time: 8.0 days
-  Fast Delivery (≤3 days): 28.5%
+BUSINESS METRICS SUMMARY: Jan 2023 - Dec 2023
+Compared with: Jan 2022 - Dec 2022
+============================================================
+Total revenue:          $3,360,294.74
+Total orders:           4,635
+Average order value:    $724.98
+Revenue change:         -2.46%
+Order count change:     -2.40%
+AOV change:             -0.06%
+Average MoM growth:     -0.39%
+Average review score:   4.10 / 5
+Average delivery time:  8.0 days
+============================================================
 ```
 
 ### Generated Visualizations
-- Monthly revenue trend line charts
-- Top product category horizontal bar charts
-- Interactive US state choropleth maps
-- Customer satisfaction distribution charts
+- Monthly revenue line chart (analysis vs comparison period)
+- Revenue by product category horizontal bar chart
+- Interactive US state choropleth map
+- Review score distribution and review score by delivery time bar charts
 
 ## Customization Options
 
 ### Adding New Metrics
-1. Extend the `BusinessMetricsCalculator` class in `business_metrics.py`
-2. Add visualization methods to `MetricsVisualizer` class
-3. Update the notebook to display new metrics
+1. Add a method to `BusinessMetricsCalculator` in `business_metrics.py` (calculations only, with a docstring)
+2. Add a chart function to `visualizations.py` that takes a `period_label` for its title
+3. Call both from a new subsection of the notebook, with a short markdown explanation
 
 ### Custom Visualizations
 ```python
-# Example: Custom visualization
-def plot_custom_metric(self, data):
-    fig, ax = plt.subplots(figsize=(12, 6))
-    # Your visualization code
+# Example: custom chart in visualizations.py
+def plot_custom_metric(data, period_label):
+    fig, ax = plt.subplots(figsize=(11, 5))
+    ax.bar(data['label'], data['value'], color=COLORS['primary'])
+    ax.set_title(f"Custom Metric, {period_label}", loc='left')
+    ax.set_ylabel('Value (units)')
+    _style_axes(ax)
     return fig
 ```
 
